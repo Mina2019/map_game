@@ -1,0 +1,12 @@
+{
+  "name": "Continent Clicker",
+  "short_name": "Map Quiz",
+  "start_url": "./mobile-game.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f9fc",
+  "theme_color": "#1769aa",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

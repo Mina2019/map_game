@@ -1,2 +1,1 @@
-streamlit
-supabase
+streamlit>=1.48,<2
