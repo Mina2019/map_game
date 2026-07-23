@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Continent Clicker</title>
+  <style>
+    :root { --ink:#14213d; --paper:#f7f9fc; --sea:#dceef8; --land:#d5dbe5; --line:#fff; --blue:#1769aa; --green:#14804a; --red:#bd2f37; --gold:#bc7411; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--ink); background:var(--paper); }
+    main { width:min(1080px,100%); margin:auto; padding:28px 18px 36px; }
+    h1 { margin:0; font-size:clamp(1.8rem,4vw,2.8rem); letter-spacing:-.04em; }
+    .subtitle { margin:.35rem 0 1.5rem; color:#52627a; }
+    .continent-picker { display:grid; grid-template-columns:repeat(5,minmax(110px,1fr)); gap:10px; margin-bottom:20px; }
+    button { font:inherit; cursor:pointer; }
+    .continent { border:1px solid #cbd5e1; border-radius:12px; padding:12px 8px; color:var(--ink); background:white; font-weight:700; }
+    .continent:hover, .continent:focus-visible { border-color:var(--blue); outline:3px solid #a9d6f5; outline-offset:1px; }
+    .continent.active { background:var(--ink); border-color:var(--ink); color:white; }
+    .game { display:grid; grid-template-columns:minmax(0,1fr) 230px; gap:18px; align-items:start; }
+    .map-wrap { position:relative; border:1px solid #c9d8e8; border-radius:18px; overflow:hidden; background:var(--sea); min-height:480px; }
+    #map { display:block; width:100%; height:auto; min-height:480px; }
+    .country { fill:var(--land); stroke:var(--line); stroke-width:.7; vector-effect:non-scaling-stroke; cursor:pointer; transition:fill .14s ease; }
+    .country:hover, .country:focus { fill:#9fc7e6; outline:none; }
+    .country.correct { fill:var(--green); }
+    .country.wrong { fill:var(--red); }
+    .country.dim { fill:#c5cdd8; }
+    .panel { background:white; border:1px solid #d7e0ea; border-radius:16px; padding:18px; }
+    .eyebrow { color:#5c6b80; font-size:.82rem; font-weight:800; letter-spacing:.07em; text-transform:uppercase; }
+    #prompt { margin:.5rem 0 1.25rem; font-size:1.45rem; line-height:1.15; }
+    .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:18px 0; }
+    .stat { border-radius:10px; padding:10px; background:#eef4f9; }
+    .stat strong { display:block; font-size:1.35rem; }
+    #feedback { min-height:3.5em; margin:.7rem 0 0; font-weight:650; line-height:1.35; }
+    #feedback.good { color:var(--green); } #feedback.bad { color:var(--red); }
+    .next { width:100%; border:0; border-radius:10px; padding:11px 14px; color:white; background:var(--blue); font-weight:750; }
+    .next:disabled { cursor:not-allowed; opacity:.52; }
+    .hint { color:#52627a; font-size:.9rem; line-height:1.4; }
+    .loading { position:absolute; inset:0; display:grid; place-items:center; color:#516176; font-weight:650; }
+    @media (max-width:760px) { .continent-picker { grid-template-columns:repeat(2,1fr); } .game { grid-template-columns:1fr; } .map-wrap,#map { min-height:360px; } .panel { order:-1; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Continent Clicker</h1>
+    <p class="subtitle">Choose a continent, then find each named country on the map.</p>
+    <nav class="continent-picker" aria-label="Choose a continent">
+      <button class="continent" data-continent="Africa">Africa</button>
+      <button class="continent" data-continent="Asia">Asia</button>
+      <button class="continent" data-continent="Europe">Europe</button>
+      <button class="continent" data-continent="North America">North America</button>
+      <button class="continent" data-continent="South America">South America</button>
+    </nav>
+    <section class="game" aria-live="polite">
+      <div class="map-wrap"><div id="loading" class="loading">Choose a continent to begin</div><svg id="map" viewBox="0 0 900 560" role="img" aria-label="Interactive country map"></svg></div>
+      <aside class="panel">
+        <div class="eyebrow" id="round-label">Ready to play</div>
+        <h2 id="prompt">Pick a continent</h2>
+        <p class="hint">Click a country shape. You get one answer per round.</p>
+        <div class="stats" aria-label="Game score">
+          <div class="stat"><span>Score</span><strong id="score">0 / 0</strong></div>
+          <div class="stat"><span>Streak</span><strong id="streak">0</strong></div>
+        </div>
+        <button class="next" id="next" disabled>Next country</button>
+        <p id="feedback" aria-live="assertive"></p>
+      </aside>
+    </section>
+  </main>
+  <script type="module">
+    import * as d3 from 'https://esm.sh/d3@7.9.0';
+    import world from 'https://esm.sh/@d3-maps/atlas@1.0.0/world/countries/countries-110m';
+    import { feature } from 'https://esm.sh/topojson-client@3.1.0';
+
+    const countries = {
+      Africa: [['DZA','Algeria'],['AGO','Angola'],['BEN','Benin'],['BWA','Botswana'],['BFA','Burkina Faso'],['BDI','Burundi'],['CMR','Cameroon'],['CAF','Central African Republic'],['TCD','Chad'],['COG','Republic of the Congo'],['COD','Democratic Republic of the Congo'],['CIV',"Côte d’Ivoire"],['DJI','Djibouti'],['EGY','Egypt'],['GNQ','Equatorial Guinea'],['ERI','Eritrea'],['SWZ','Eswatini'],['ETH','Ethiopia'],['GAB','Gabon'],['GMB','The Gambia'],['GHA','Ghana'],['GIN','Guinea'],['GNB','Guinea-Bissau'],['KEN','Kenya'],['LSO','Lesotho'],['LBR','Liberia'],['LBY','Libya'],['MDG','Madagascar'],['MWI','Malawi'],['MLI','Mali'],['MRT','Mauritania'],['MAR','Morocco'],['MOZ','Mozambique'],['NAM','Namibia'],['NER','Niger'],['NGA','Nigeria'],['RWA','Rwanda'],['SEN','Senegal'],['SLE','Sierra Leone'],['SOM','Somalia'],['ZAF','South Africa'],['SSD','South Sudan'],['SDN','Sudan'],['TZA','Tanzania'],['TGO','Togo'],['TUN','Tunisia'],['UGA','Uganda'],['ZMB','Zambia'],['ZWE','Zimbabwe']],
+      Asia: [['AFG','Afghanistan'],['ARM','Armenia'],['AZE','Azerbaijan'],['BHR','Bahrain'],['BGD','Bangladesh'],['BTN','Bhutan'],['BRN','Brunei'],['KHM','Cambodia'],['CHN','China'],['CYP','Cyprus'],['GEO','Georgia'],['IND','India'],['IDN','Indonesia'],['IRN','Iran'],['IRQ','Iraq'],['ISR','Israel'],['JPN','Japan'],['JOR','Jordan'],['KAZ','Kazakhstan'],['KWT','Kuwait'],['KGZ','Kyrgyzstan'],['LAO','Laos'],['LBN','Lebanon'],['MYS','Malaysia'],['MDV','Maldives'],['MNG','Mongolia'],['MMR','Myanmar'],['NPL','Nepal'],['PRK','North Korea'],['OMN','Oman'],['PAK','Pakistan'],['PHL','Philippines'],['QAT','Qatar'],['SAU','Saudi Arabia'],['SGP','Singapore'],['KOR','South Korea'],['LKA','Sri Lanka'],['SYR','Syria'],['TWN','Taiwan'],['TJK','Tajikistan'],['THA','Thailand'],['TLS','Timor-Leste'],['TUR','Turkey'],['TKM','Turkmenistan'],['ARE','United Arab Emirates'],['UZB','Uzbekistan'],['VNM','Vietnam'],['YEM','Yemen']],
+      Europe: [['ALB','Albania'],['AND','Andorra'],['AUT','Austria'],['BLR','Belarus'],['BEL','Belgium'],['BIH','Bosnia and Herzegovina'],['BGR','Bulgaria'],['HRV','Croatia'],['CZE','Czechia'],['DNK','Denmark'],['EST','Estonia'],['FIN','Finland'],['FRA','France'],['DEU','Germany'],['GRC','Greece'],['HUN','Hungary'],['ISL','Iceland'],['IRL','Ireland'],['ITA','Italy'],['LVA','Latvia'],['LIE','Liechtenstein'],['LTU','Lithuania'],['LUX','Luxembourg'],['MLT','Malta'],['MDA','Moldova'],['MCO','Monaco'],['MNE','Montenegro'],['NLD','Netherlands'],['MKD','North Macedonia'],['NOR','Norway'],['POL','Poland'],['PRT','Portugal'],['ROU','Romania'],['RUS','Russia'],['SMR','San Marino'],['SRB','Serbia'],['SVK','Slovakia'],['SVN','Slovenia'],['ESP','Spain'],['SWE','Sweden'],['CHE','Switzerland'],['UKR','Ukraine'],['GBR','United Kingdom'],['VAT','Vatican City']],
+      'North America': [['ATG','Antigua and Barbuda'],['BHS','The Bahamas'],['BRB','Barbados'],['BLZ','Belize'],['CAN','Canada'],['CRI','Costa Rica'],['CUB','Cuba'],['DMA','Dominica'],['DOM','Dominican Republic'],['SLV','El Salvador'],['GRD','Grenada'],['GTM','Guatemala'],['HTI','Haiti'],['HND','Honduras'],['JAM','Jamaica'],['MEX','Mexico'],['NIC','Nicaragua'],['PAN','Panama'],['KNA','Saint Kitts and Nevis'],['LCA','Saint Lucia'],['VCT','Saint Vincent and the Grenadines'],['TTO','Trinidad and Tobago'],['USA','United States']],
+      'South America': [['ARG','Argentina'],['BOL','Bolivia'],['BRA','Brazil'],['CHL','Chile'],['COL','Colombia'],['ECU','Ecuador'],['GUY','Guyana'],['PRY','Paraguay'],['PER','Peru'],['SUR','Suriname'],['URY','Uruguay'],['VEN','Venezuela']]
+    };
+    const svg = d3.select('#map'), loading = document.querySelector('#loading'), next = document.querySelector('#next');
+    const prompt = document.querySelector('#prompt'), feedback = document.querySelector('#feedback'), scoreEl = document.querySelector('#score'), streakEl = document.querySelector('#streak'), roundLabel = document.querySelector('#round-label');
+    let allFeatures = [], selected = null, answer = null, answered = false, score = 0, attempts = 0, streak = 0;
+    const iso = f => String(f.properties.id || f.properties.ISO_A3 || f.properties.iso_a3 || f.properties.ADM0_A3 || f.id || '').toUpperCase();
+    const shuffle = arr => [...arr].sort(() => Math.random() - .5);
+    const normalize = value => value === '-99' ? '' : value;
+
+    function loadMap() {
+      try {
+        allFeatures = feature(world, world.objects.features).features.filter(f => normalize(iso(f)));
+        loading.textContent = 'Choose a continent to begin';
+      } catch (error) { loading.textContent = 'Map could not load. Check your internet connection and refresh.'; }
+    }
+    function start(continent) {
+      selected = continent; score = attempts = streak = 0;
+      document.querySelectorAll('.continent').forEach(b => b.classList.toggle('active', b.dataset.continent === continent));
+      draw(); newRound();
+    }
+    function draw() {
+      const allowed = new Set(countries[selected].map(([code]) => code));
+      const features = allFeatures.filter(f => allowed.has(iso(f)));
+      const projection = d3.geoMercator().fitExtent([[25,25],[875,535]], {type:'FeatureCollection',features});
+      const path = d3.geoPath(projection);
+      svg.selectAll('*').remove();
+      svg.append('path').datum({type:'Sphere'}).attr('fill','#dceef8').attr('d',path);
+      svg.append('g').selectAll('path').data(features).join('path').attr('class','country').attr('data-iso',iso).attr('d',path).attr('role','button').attr('aria-label',d => countries[selected].find(x => x[0] === iso(d))?.[1] || iso(d)).attr('tabindex',0).on('click',(_,d)=>guess(iso(d))).on('keydown',(event,d)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();guess(iso(d));}});
+      loading.style.display = features.length ? 'none' : 'grid';
+      if (!features.length) loading.textContent = 'This continent map is unavailable right now.';
+    }
+    function newRound() {
+      if (!selected) return;
+      answer = shuffle(countries[selected])[0]; answered = false; feedback.textContent = ''; feedback.className = ''; next.disabled = true;
+      prompt.textContent = answer[1]; roundLabel.textContent = `${selected} · Find this country`;
+      svg.selectAll('.country').attr('class','country');
+      updateStats();
+    }
+    function guess(code) {
+      if (answered || !answer) return;
+      answered = true; attempts++;
+      const right = code === answer[0];
+      svg.selectAll('.country').classed('correct', d => iso(d) === answer[0]).classed('wrong', d => iso(d) === code && !right).classed('dim', d => iso(d) !== answer[0] && iso(d) !== code);
+      if (right) { score++; streak++; feedback.textContent = `Correct — that’s ${answer[1]}!`; feedback.className = 'good'; }
+      else { streak = 0; const chosen = countries[selected].find(x => x[0] === code)?.[1] || 'that country'; feedback.textContent = `Not quite — you clicked ${chosen}. ${answer[1]} is highlighted.`; feedback.className = 'bad'; }
+      next.disabled = false; updateStats();
+    }
+    function updateStats() { scoreEl.textContent = `${score} / ${attempts}`; streakEl.textContent = streak; }
+    document.querySelectorAll('.continent').forEach(button => button.addEventListener('click', () => start(button.dataset.continent)));
+    next.addEventListener('click', newRound);
+    loadMap();
+  </script>
+</body>
+</html>
